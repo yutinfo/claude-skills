@@ -17,6 +17,7 @@ Claude เป็น **หัวหน้างาน** (แตกงาน เ�
 - สคริปต์: `scripts/agy-run.sh` (`preflight` / `smoke` / `run`) — ใส่ flag ถูกลำดับ ตั้งสิทธิ์เฉพาะ session, timeout, เก็บ log JSON + สรุป token ให้อัตโนมัติ ใช้ได้ macOS/Linux/WSL
 - `references/agy-cli-guide.md` — flags, subcommands, slash commands, settings.json, ตารางโมเดลเต็ม, กลยุทธ์ (อ่านเมื่อเลือกโมเดลยาก ตั้งค่า หรือใช้ interactive)
 - `references/task-sheet.md` — เทมเพลตใบงาน + ตัวอย่าง (อ่านก่อนเขียนใบงานแรกของ session)
+- `references/model-roles.md` — โมเดลตามบทบาท dev (Architect/Tech Lead/Senior/Frontend-Reviewer/Escalation/QA/DevOps/Peer reviewer), ตาราง SDLC 9 ขั้น, สูตรทีม A/B/C, anti-patterns (อ่านเมื่อแบ่งงานหลายบทบาทหรือเลือกโมเดลไม่ลง)
 
 ## 1. Preflight ครั้งเดียวต่อ session
 
@@ -38,7 +39,10 @@ bash <skill-dir>/scripts/agy-run.sh preflight
 | สถาปัตยกรรม, บั๊กข้ามระบบ, security audit (ใช้กับ `--mode plan`) | `gemini-4-argon-high` / `gemini-pro-orchestrator-g1-pro` |
 | ติดหล่มจริง ต้องการมุมมองท็อป | `gemini-4-neon-xhigh` หรือ `claude-opus-5-5-high` — **ถามผู้ใช้ก่อน** (แพงมาก) |
 | สไตล์โค้ดฝั่ง Claude, code review ประณีต, Frontend/TS | `claude-sonnet-5-5-medium` |
-| second opinion ราคากลาง | `gpt-oss-120b-medium` |
+| second opinion ข้ามค่าย (คนละตระกูลโมเดล ลดจุดบอดร่วม) | `gpt-oss-120b-medium` (`--mode plan`) |
+| CI/CD, commit message, changelog, YAML, shell/regex/SQL สั้น | `gemini-3.8-flash-low` (ถูกสุด) |
+
+Opus/Neon-xhigh = **ปรึกษาเฉพาะจุด** (`--mode plan`) พอได้ root cause แล้วสลับกลับไปให้ Hydrogen/Neon-medium ลงมือแก้ · บั๊กเดิมแก้ 2–3 รอบไม่หลุด → เปลี่ยนค่าย/ระดับ (Neon → Sonnet/Opus หรือ Argon) พร้อมส่งสมมติฐานที่ตัดทิ้งแล้ว อย่าวนโมเดลเดิม
 
 หลัก: เริ่มต่ำ ขยับขึ้นเมื่อมีหลักฐานว่าต้องการ · อย่าค้าง xhigh/Argon/Opus ทั้งวัน · งานใหญ่ใช้สูตร **Explore (Hydrogen/Neon-medium) → Plan (`--mode plan` ด้วย Neon-high/Argon) → Implement (Hydrogen/Neon-medium)** แยกเป็นรอบ ๆ แทนการโยนทั้งก้อน
 

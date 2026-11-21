@@ -20,4 +20,5 @@ bash ~/.claude/skills/agy-delegate/scripts/agy-run.sh smoke     # ทดสอ�
 - `SKILL.md` — ขั้นตอนหลัก, ตารางเลือกโมเดล, การรัน, การตรวจ, การคุมโควตา, ปัญหาที่เคยเจอ
 - `references/agy-cli-guide.md` — คู่มือ agy ฉบับย่อ (flags, subcommands, slash commands, settings, โมเดล, กลยุทธ์) แก้ส่วนที่คู่มือต้นฉบับผิดแล้ว
 - `references/task-sheet.md` — เทมเพลตใบงานแบบที่เหมาะกับข้อจำกัดเรื่องสิทธิ์ของ agy
+- `references/model-roles.md` — เลือกโมเดล agy ตามบทบาท dev, ตาราง SDLC, สูตรทีม และ anti-patterns
 - `scripts/agy-run.sh` — ตัวช่วยที่ใช้ได้ทุกเครื่อง มี 3 คำสั่ง: `preflight`, `smoke`, `run`

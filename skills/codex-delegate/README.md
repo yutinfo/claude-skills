@@ -23,4 +23,5 @@ bash ~/.claude/skills/codex-delegate/scripts/codex-run.sh preflight
 - `SKILL.md` — ขั้นตอนหลัก: preflight → เลือกโมเดล → เขียนใบงาน → รัน → ตรวจ → คุมโควตา
 - `references/codex-cli-guide.md` — คู่มือ Codex CLI ฉบับย่อ (ตรวจกับเวอร์ชัน 0.171.0)
 - `references/task-sheet.md` — เทมเพลตใบงานพร้อมตัวอย่างที่ดีและไม่ดี
+- `references/model-roles.md` — เลือกโมเดล Codex ตามบทบาทในทีม (Sol/Astra/Terra/Luna) การแบ่ง ticket และการส่งต่องาน
 - `scripts/codex-run.sh` — ตัวช่วยที่ใช้ได้ทุกเครื่อง มี 3 คำสั่ง: `preflight`, `smoke`, `run`
