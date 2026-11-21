@@ -1,11 +1,18 @@
 ---
 name: agy-delegate
-description: สั่งงานให้ Google Antigravity CLI (`agy`) แบบ headless อย่างถูกต้อง ประหยัดโควตา และตรวจสอบได้ — เลือกโมเดล Gemini 4 Hydrogen/Neon/Argon, Orchestrator, Claude 5.5 ฯลฯ ให้พอดีงาน, ตั้งสิทธิ์คำสั่งเฉพาะ session, ตั้ง timeout กันค้าง, เก็บ usage token ทุกรอบ แล้วให้ Claude ตรวจผลเอง ใช้ skill นี้ทุกครั้งที่ผู้ใช้พูดถึง agy, Antigravity, "gem"/ฝั่ง Google ในฐานะลูกทีม, ให้ Claude เป็นหัวหน้าทีมสั่งงาน AI ตัวอื่น, แบ่งงานให้ agy, รีวิว diff ด้วย agy, หรือกังวลเรื่องโควตาของ agy — แม้ไม่ได้เอ่ยชื่อ skill (ถ้าเป็นงานของ Codex ใช้ codex-delegate แทน)
+description: สั่งงานให้ Google Antigravity CLI (`agy`) แบบ headless อย่างถูกต้อง ประหยัดโควตา และตรวจสอบได้ — เลือกโมเดล Gemini 4 Hydrogen/Neon/Argon, Orchestrator, Claude 5.5 ฯลฯ ให้พอดีงาน, ตั้งสิทธิ์คำสั่งเฉพาะ session, ตั้ง timeout กันค้าง, เก็บ usage token ทุกรอบ แล้วให้ Claude ตรวจผลเอง ใช้ skill นี้ทุกครั้งที่ผู้ใช้พูดถึง agy, Antigravity, "gem"/ฝั่ง Google ในฐานะลูกทีม, ให้ Claude เป็นหัวหน้าทีมสั่งงาน AI ตัวอื่น, แบ่งงานให้ agy, รีวิว diff ด้วย agy, หรือกังวลเรื่องโควตาของ agy — แม้ไม่ได้เอ่ยชื่อ skill (ถ้าเป็นงานของ Codex ใช้ codex-delegate แทน · งานสร้างภาพทุกชนิดต้องใช้ codex-delegate เพราะ agy สร้างภาพไม่ได้)
 ---
 
 # agy Delegate
 
 Claude เป็น **หัวหน้างาน** (แตกงาน เขียนใบงาน สั่ง ตรวจ) agy เป็น **ผู้ลงมือ** เป้าหมาย: งานจบในรอบน้อยที่สุด มีหลักฐานตรวจได้ เพราะผู้ใช้มีโควตาจำกัดทุกฝั่ง
+
+> **กฎของผู้ใช้: งานสร้างภาพส่งให้ Codex เสมอ ห้ามส่งให้ agy**
+> agy ไม่มีเครื่องมือสร้างหรือแก้ภาพ และไม่มีโมเดลภาพใน `agy models` (ตรวจกับเวอร์ชัน 1.5.13) ถ้าส่งไปก็เสียโควตาเปล่า
+> - "งานสร้างภาพ" คือ รูปสินค้า, ภาพประกอบ, รูปถ่ายหรือภาพเรนเดอร์, ไอคอนหรือโลโก้แบบ raster (PNG/JPG/WebP), และการแก้หรือย่อขยายภาพด้วย AI → ใช้ skill **codex-delegate** แทน (Codex มีฟีเจอร์ `image_generation`)
+> - ถ้างานเดียวมีทั้งโค้ดและภาพ: ส่งใบงานภาพให้ Codex ก่อน โดยกำหนดชื่อไฟล์ ขนาด และสไตล์ไว้ในสเปกกลาง แล้วใบงานโค้ดของ agy ให้อ้างชื่อไฟล์ภาพเหล่านั้น ห้ามให้ agy ใช้ placeholder แทนภาพจริง เว้นแต่ใบงานจะสั่งไว้
+> - ข้อยกเว้นเดียว: agy เขียนภาพเป็นโค้ด (SVG/CSS) ได้ ก็ต่อเมื่อใบงานบอกชัดว่าต้องการ "เขียนเป็นโค้ด" ไม่ใช่ภาพจริง
+> - เครื่องมือที่ agy มี (ตรวจเมื่อ พ.ย. 2026): run_command, read/write/edit_file, **search_web** (ค้นเว็บได้ เหมาะกับงานค้นคว้าหรือหาแรงบันดาลใจ), ask_question, subagent (define/invoke/manage), swarm, schedule, run_workflow, manage_task, send_message
 
 - สคริปต์: `scripts/agy-run.sh` (`preflight` / `smoke` / `run`) — ใส่ flag ถูกลำดับ ตั้งสิทธิ์เฉพาะ session, timeout, เก็บ log JSON + สรุป token ให้อัตโนมัติ ใช้ได้ macOS/Linux/WSL
 - `references/agy-cli-guide.md` — flags, subcommands, slash commands, settings.json, ตารางโมเดลเต็ม, กลยุทธ์ (อ่านเมื่อเลือกโมเดลยาก ตั้งค่า หรือใช้ interactive)

@@ -13,6 +13,8 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 2; }
 info() { printf '%s\n' "$*"; }
 
 need_agy() {
+  # agy installs to ~/.local/bin, which non-login shells (e.g. agent tool shells) often lack on PATH
+  if ! command -v agy >/dev/null 2>&1 && [ -x "$HOME/.local/bin/agy" ]; then export PATH="$HOME/.local/bin:$PATH"; fi
   command -v agy >/dev/null 2>&1 || die "agy not found in PATH. Install Google Antigravity CLI (see https://antigravity.google/docs/getting-started), then run \`agy\` once to sign in."
 }
 
