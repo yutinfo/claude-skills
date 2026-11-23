@@ -6,7 +6,14 @@
 #   agy-run.sh smoke [--model gemini-4-hydrogen-low]
 #   agy-run.sh run --dir <repo> (--prompt "<text>" | --task-file <file>)
 #                  [--model gemini-4-neon-medium] [--mode accept-edits|plan|auto]
-#                  [--allow <program>]... [--timeout <seconds>] [--add-dir <dir>]... [--no-sandbox] [--log-dir <dir>]
+#                  [--allow <program>]... [--timeout <seconds>] [--add-dir <dir>]... [--no-sandbox] [--strict] [--log-dir <dir>]
+#
+# Permission model (verified on agy 1.5.14):
+#   default      sandbox on + toolPermission=proceed-in-sandbox: any command runs without a prompt, but only
+#                inside the sandbox (no network, no writes outside the workspace/--add-dir, ~/.ssh unreadable).
+#   --strict     sandbox on, only --allow'ed programs run. EVERY program of a pipeline must be allowed
+#                (`npx vitest | tail` needs npx AND tail) and one refused command ends the whole run.
+#   --no-sandbox no sandbox, only --allow'ed programs run (needed for network: npm install, curl, git push).
 set -uo pipefail
 
 die()  { printf 'error: %s\n' "$*" >&2; exit 2; }
@@ -33,12 +40,34 @@ json_field() {  # json_field <file> <python-expr on d>  (prints "" if python3 mi
 import json, sys
 try:
     raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-    start = raw.rfind('{"conversation_id"')
-    d = json.loads(raw[start:] if start >= 0 else raw)
+    d = None
+    for line in reversed(raw.splitlines()):          # stream-json: last {"event":"result"} line
+        if line.startswith('{"event":"result"'):
+            d = json.loads(line)["result"]; break
+    if d is None:                                    # plain json output
+        start = raw.rfind('{"conversation_id"')
+        d = json.loads(raw[start:] if start >= 0 else raw)
     v = eval(sys.argv[2], {}, {"d": d})
     print(v if v is not None else "")
 except Exception:
     pass
+PY
+}
+
+denied_commands() {  # the exact command lines a stream-json log shows as refused, one per line
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$1" <<'PY'
+import json, sys
+seen = []
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if not line.startswith('{"event":"step_update"'): continue
+    try: info = json.loads(line)["step_update"].get("tool_info") or {}
+    except Exception: continue
+    msg = (info.get("error") or {}).get("message", "")
+    if "permission" not in msg: continue
+    cmd = (info.get("parameters") or {}).get("CommandLine") or info.get("name", "?")
+    if cmd not in seen: seen.append(cmd)
+for c in seen: print(c)
 PY
 }
 
@@ -70,7 +99,7 @@ cmd_smoke() {
 }
 
 cmd_run() {
-  local dir="" prompt="" task="" model="gemini-4-neon-medium" mode="accept-edits" timeout=600 sandbox=1 logdir=""
+  local dir="" prompt="" task="" model="gemini-4-neon-medium" mode="accept-edits" timeout=600 sandbox=1 strict="" logdir=""
   local -a allows=() adddirs=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -83,6 +112,7 @@ cmd_run() {
       --timeout) timeout="$2"; shift 2;;
       --add-dir) adddirs+=("$2"); shift 2;;
       --no-sandbox) sandbox=""; shift;;
+      --strict) strict=1; shift;;
       --log-dir) logdir="$2"; shift 2;;
       *) die "unknown arg $1";;
     esac
@@ -98,21 +128,28 @@ cmd_run() {
 
   local allowed_list="(none)"
   [ ${#allows[@]} -gt 0 ] && allowed_list="$(printf '%s, ' "${allows[@]}" | sed 's/, $//')"
-  local rules="เขียน/แก้ไฟล์ด้วยเครื่องมือแก้ไฟล์เท่านั้น ไม่ใช้ shell เขียนไฟล์; คำสั่ง shell ที่อนุญาต (ขึ้นต้นด้วย): ${allowed_list}"
+  local rules
+  if [ -n "$sandbox" ] && [ -z "$strict" ]; then
+    rules="เขียน/แก้ไฟล์ด้วยเครื่องมือแก้ไฟล์เท่านั้น ไม่ใช้ shell เขียนไฟล์; คำสั่ง shell รันใน sandbox: ไม่มีเครือข่าย (ห้าม npm install/curl/git push/fetch) และเขียนนอกโฟลเดอร์งานไม่ได้ — ถ้าคำสั่งล้มเพราะ sandbox ให้รายงานแล้วทำส่วนที่เหลือต่อ ห้าม commit"
+  else
+    rules="เขียน/แก้ไฟล์ด้วยเครื่องมือแก้ไฟล์เท่านั้น ไม่ใช้ shell เขียนไฟล์; คำสั่ง shell ใช้ได้เฉพาะโปรแกรมเหล่านี้: ${allowed_list} — ทุกโปรแกรมในคำสั่งรวมทั้งหลัง | && ; ต้องอยู่ในรายการ (ห้ามต่อ | head, | tail, | wc ถ้าไม่ได้อนุญาตไว้ ให้ใช้ตัวเลือกของโปรแกรมเองหรืออ่านไฟล์ด้วยเครื่องมืออ่านไฟล์) คำสั่งที่ถูกปฏิเสธเพียงครั้งเดียวจะจบงานทันที"
+  fi
   if [ -n "$task" ]; then
     [ -f "$dir/$task" ] || [ -f "$task" ] || die "task file not found: $task"
     prompt="ทำใบงาน ${task} ให้เสร็จตามเกณฑ์ผ่าน (${rules}) แล้วสรุปไฟล์ที่แก้ คำสั่งที่รัน และผลทดสอบจริง${prompt:+ — หมายเหตุ: $prompt}"
   elif [ -n "$prompt" ]; then
-    [ "$mode" = "plan" ] || prompt="${prompt} (${rules})"
+    prompt="${prompt} (${rules})"
   else die "--prompt or --task-file is required"; fi
   model_ok "$model" || die "model '$model' is not available for this account (run: $0 preflight)"
 
-  local settings='{"permissions":{"allow":['
+  local settings='{'
+  [ -n "$sandbox" ] && [ -z "$strict" ] && settings+='"toolPermission":"proceed-in-sandbox",'
+  settings+='"permissions":{"allow":['
   local first=1; for a in ${allows[@]+"${allows[@]}"}; do
     [ $first -eq 1 ] || settings+=','; settings+="\"command($a)\""; first=0
   done; settings+=']}}'
 
-  local -a args=(--model "$model" --mode "$mode" --print-timeout "${timeout}s" --output-format json --settings "$settings")
+  local -a args=(--model "$model" --mode "$mode" --print-timeout "${timeout}s" --output-format stream-json --settings "$settings")
   [ -n "$sandbox" ] && args+=(--sandbox)
   local d; for d in ${adddirs[@]+"${adddirs[@]}"}; do args+=(--add-dir "$d"); done
   args+=(-p "$prompt")   # -p must carry the prompt as its value, and stays last
@@ -123,14 +160,36 @@ cmd_run() {
     case "$gitdir" in /*) ;; *) gitdir="$dir/$gitdir";; esac
     mkdir -p "$gitdir/info" && { grep -qx '.agy-runs/' "$gitdir/info/exclude" 2>/dev/null || echo '.agy-runs/' >> "$gitdir/info/exclude"; }
   }
-  local log; log="$logdir/$(date +%Y%m%d-%H%M%S).json"
+  local log; log="$logdir/$(date +%Y%m%d-%H%M%S).ndjson"
 
-  info "▶ agy --model $model --mode $mode --print-timeout ${timeout}s allow=[${allowed_list}]${sandbox:+ sandbox} (log: $log)"
+  local policy="allow-list only"; [ -n "$sandbox" ] && [ -z "$strict" ] && policy="any command inside sandbox"
+  info "▶ agy --model $model --mode $mode --print-timeout ${timeout}s allow=[${allowed_list}]${sandbox:+ sandbox} policy=[$policy] (log: $log)"
   local start=$SECONDS rc
-  ( cd "$dir" && agy "${args[@]}" < /dev/null ) > "$log" 2>&1; rc=$?
+  (
+    cd "$dir" || exit 2
+    if [ -n "$sandbox" ]; then
+      # Inside the sandbox git cannot read the xcode-select link nor config files included from
+      # ~/.gitconfig, and would die on every call. Point it at the toolchain directly and give it
+      # an empty global config (so it also has no identity: commits stay the lead's job).
+      if [ "$(uname -s)" = "Darwin" ] && [ -z "${DEVELOPER_DIR:-}" ] && command -v xcode-select >/dev/null 2>&1; then
+        DEVELOPER_DIR="$(xcode-select -p 2>/dev/null)" && [ -n "$DEVELOPER_DIR" ] && export DEVELOPER_DIR
+      fi
+      export GIT_CONFIG_GLOBAL=/dev/null
+    fi
+    agy "${args[@]}" < /dev/null
+  ) > "$log" 2>&1; rc=$?
   info "■ exit=$rc  time=$((SECONDS-start))s  status=$(json_field "$log" 'd.get("status")')  tokens=$(json_field "$log" 'd.get("usage",{}).get("total_tokens")')"
   local denied; denied="$(json_field "$log" '", ".join(x.get("action","")+":"+x.get("display_name","") for x in d.get("denied_actions",[]))')"
-  [ -n "$denied" ] && info "⚠ denied_actions: $denied  → add the needed --allow <program> and rerun (do not use skip-permissions)"
+  if [ -n "$denied" ]; then
+    info "⚠ denied_actions: $denied — a refused command ENDS the run, so the work below is incomplete"
+    local dc; dc="$(denied_commands "$log")"
+    [ -n "$dc" ] && { info "  refused command(s):"; printf '%s\n' "$dc" | sed 's/^/    /' | head -10; }
+    if [ -n "$sandbox" ] && [ -z "$strict" ]; then
+      info "  → it needed to leave the sandbox (network / path outside the workspace). Use --add-dir for extra folders, or do that step yourself; do not use skip-permissions"
+    else
+      info "  → every program in the command (also after | && ;) needs its own --allow; or drop --strict to run inside the sandbox instead. Do not use skip-permissions"
+    fi
+  fi
   local resp; resp="$(json_field "$log" 'd.get("response","")')"
   if [ -n "$resp" ]; then info "--- response ---"; printf '%s\n' "$resp" | sed -n '1,40p'
   else info "--- raw log tail ---"; tail -n 15 "$log"; fi

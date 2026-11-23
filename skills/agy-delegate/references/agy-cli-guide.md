@@ -55,6 +55,8 @@ agy ต่างจาก `gemini` CLI: รองรับหลายตระ�
   "permissions": { "allow": ["command(git status)", "command(git diff)", "command(npm test)"] }
 }
 ```
+`toolPermission: "proceed-in-sandbox"` + `--sandbox` **[ตรวจแล้ว 1.5.14]**: รันคำสั่งได้โดยไม่ถามสิทธิ์ แต่อยู่ใน sandbox (ไม่มีเครือข่าย แม้ใส่ `command(curl)` ก็ resolve host ไม่ได้; เขียนนอก workspace ไม่ได้; `~/.ssh` อ่านไม่ได้) · headless ที่ไม่มีค่านี้: คำสั่งใดไม่ตรง allow จะถูกปฏิเสธและ**จบรอบทันที** โดย pipeline ต้องอนุญาตทุกโปรแกรม (`ls | wc -l` ต้องมีทั้ง `command(ls)` และ `command(wc)`) · `--output-format stream-json` แสดงบรรทัดคำสั่งที่ถูกปฏิเสธใน `step_update.tool_info`
+
 รูปแบบ allow: `command(<prefix>)` — **[ตรวจแล้ว]** `command(node)` อนุญาต `node --test`; ส่วน `command(node --test)` อย่างเดียวไม่พอเมื่อโมเดลพยายามใช้ shell เขียนไฟล์ก่อน → สั่งให้ใช้ file tool
 
 ## 6. โมเดลและ effort
