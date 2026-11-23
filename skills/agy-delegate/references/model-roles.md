@@ -69,7 +69,7 @@ Role details:
 
 ## 5. Team routing reminder
 
-- agy has **no image generation**. All raster images go to **Codex** (codex-delegate).
+- All raster images go to **Codex** (codex-delegate). agy can *read* screenshots placed in the workspace, which is useful for visual fix sheets.
 - Measured small-task cost: agy has ~10–13k tokens of overhead per call, so batch related work into one run.
 - agy's strengths in this team:
   - `search_web` research

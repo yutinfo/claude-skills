@@ -120,7 +120,7 @@ cmd_run() {
     case "$gitdir" in /*) ;; *) gitdir="$dir/$gitdir";; esac
     mkdir -p "$gitdir/info" && { grep -qx '.codex-runs/' "$gitdir/info/exclude" 2>/dev/null || echo '.codex-runs/' >> "$gitdir/info/exclude"; }
   }
-  local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
+  local stamp; stamp="$(date +%Y%m%d-%H%M%S)-$$"   # PID: parallel runs start in the same second
   local log="$logdir/$stamp.log" last="$logdir/$stamp.last.md"
   args+=(-o "$last" -- "$prompt")
 

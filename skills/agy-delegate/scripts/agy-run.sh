@@ -4,6 +4,8 @@
 #
 #   agy-run.sh preflight [--model <slug>]
 #   agy-run.sh smoke [--model gemini-4-hydrogen-low]
+#   agy-run.sh quota                      # percent left + reset time per model family
+#   agy-run.sh stats --dir <repo>         # tokens/time per run and per model, from .agy-runs/**/*.ndjson
 #   agy-run.sh run --dir <repo> (--prompt "<text>" | --task-file <file>)
 #                  [--model gemini-4-neon-medium] [--mode accept-edits|plan|auto]
 #                  [--allow <program>]... [--timeout <seconds>] [--add-dir <dir>]... [--no-sandbox] [--strict] [--log-dir <dir>]
@@ -98,8 +100,49 @@ cmd_smoke() {
   rm -rf "$tmp"
 }
 
+cmd_quota() {
+  need_agy
+  agy --print-timeout 60s -p "/usage" < /dev/null
+}
+
+cmd_stats() {
+  local dir=""
+  while [ $# -gt 0 ]; do case "$1" in --dir) [ $# -ge 2 ] || die "--dir needs a value"; dir="$2"; shift 2;; *) die "unknown arg $1";; esac; done
+  [ -d "$dir/.agy-runs" ] || die "no .agy-runs in: ${dir:-(missing --dir)}"
+  command -v python3 >/dev/null 2>&1 || die "stats needs python3"
+  python3 - "$dir/.agy-runs" <<'PY'
+import json, os, sys
+root, rows = sys.argv[1], []
+for base, _, names in os.walk(root):
+    for n in names:
+        if not n.endswith(".ndjson"): continue
+        model, res = "?", None
+        for line in open(os.path.join(base, n), encoding="utf-8", errors="replace"):
+            if not line.startswith('{"event":"'): continue
+            try: e = json.loads(line)
+            except Exception: continue
+            if e.get("event") == "init": model = (e.get("init") or {}).get("model", "?")
+            if e.get("event") == "result": res = e.get("result") or {}
+        rows.append((os.path.relpath(os.path.join(base, n), root), model, res))
+rows.sort(key=lambda r: (os.path.basename(r[0]), r[0]))
+tot = {}
+for name, model, res in rows:
+    if res is None:
+        print(f"{name}  {model}  NO RESULT (killed or still running)"); continue
+    u = res.get("usage") or {}
+    i, o, c, t = (u.get(k) or 0 for k in ("input_tokens", "output_tokens", "cache_read_tokens", "total_tokens"))
+    sec = res.get("duration_seconds") or 0
+    print(f"{name}  {model}  {res.get('status','?')}  in={i:,} out={o:,} total={t:,} cache-read={c:,} {sec/60:.1f}min")
+    for k in (model, "ALL"):
+        a = tot.setdefault(k, [0, 0, 0, 0]); a[0] += 1; a[1] += t; a[2] += c; a[3] += sec
+for k in sorted(tot, key=lambda k: (k == "ALL", k)):
+    n, t, c, sec = tot[k]
+    print(f"= {k}: {n} runs, {t:,} tokens (+{c:,} cache-read), {sec/60:.1f} min run time added up")
+PY
+}
+
 cmd_run() {
-  local dir="" prompt="" task="" model="gemini-4-neon-medium" mode="accept-edits" timeout=600 sandbox=1 strict="" logdir=""
+  local dir="" prompt="" task="" model="gemini-4-neon-medium" mode="accept-edits" timeout=1500 sandbox=1 strict="" logdir=""
   local -a allows=() adddirs=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -160,7 +203,9 @@ cmd_run() {
     case "$gitdir" in /*) ;; *) gitdir="$dir/$gitdir";; esac
     mkdir -p "$gitdir/info" && { grep -qx '.agy-runs/' "$gitdir/info/exclude" 2>/dev/null || echo '.agy-runs/' >> "$gitdir/info/exclude"; }
   }
-  local log; log="$logdir/$(date +%Y%m%d-%H%M%S).ndjson"
+  # Parallel runs start in the same second: the task name and PID keep their logs apart.
+  local name=""; [ -n "$task" ] && { name="$(basename "$task")"; name="-${name%.*}"; }
+  local log; log="$logdir/$(date +%Y%m%d-%H%M%S)${name}-$$.ndjson"
 
   local policy="allow-list only"; [ -n "$sandbox" ] && [ -z "$strict" ] && policy="any command inside sandbox"
   info "▶ agy --model $model --mode $mode --print-timeout ${timeout}s allow=[${allowed_list}]${sandbox:+ sandbox} policy=[$policy] (log: $log)"
@@ -178,7 +223,7 @@ cmd_run() {
     fi
     agy "${args[@]}" < /dev/null
   ) > "$log" 2>&1; rc=$?
-  info "■ exit=$rc  time=$((SECONDS-start))s  status=$(json_field "$log" 'd.get("status")')  tokens=$(json_field "$log" 'd.get("usage",{}).get("total_tokens")')"
+  info "■ exit=$rc  time=$((SECONDS-start))s  status=$(json_field "$log" 'd.get("status")')  tokens=$(json_field "$log" 'd.get("usage",{}).get("total_tokens")') $(json_field "$log" '"(in %s, out %s, cache-read %s not in total)" % (d["usage"].get("input_tokens"), d["usage"].get("output_tokens"), d["usage"].get("cache_read_tokens"))')"
   local denied; denied="$(json_field "$log" '", ".join(x.get("action","")+":"+x.get("display_name","") for x in d.get("denied_actions",[]))')"
   if [ -n "$denied" ]; then
     info "⚠ denied_actions: $denied — a refused command ENDS the run, so the work below is incomplete"
@@ -204,6 +249,8 @@ sub="${1:-}"; [ $# -gt 0 ] && shift
 case "$sub" in
   preflight) cmd_preflight "$@";;
   smoke)     cmd_smoke "$@";;
+  quota)     cmd_quota "$@";;
+  stats)     cmd_stats "$@";;
   run)       cmd_run "$@";;
-  *) sed -n '2,9p' "$0"; exit 1;;
+  *) sed -n '2,11p' "$0"; exit 1;;
 esac
