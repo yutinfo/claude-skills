@@ -50,7 +50,8 @@ Opus/Neon-xhigh = **ปรึกษาเฉพาะจุด** (`--mode plan`)
 
 โครง: เป้าหมาย / หลักฐาน (path, error) / ขอบเขต (ไฟล์ที่แก้ได้ + สิ่งที่ต้องรักษา) / เกณฑ์ผ่าน (อินพุต→ผล, กรณีขอบ) / การตรวจ (คำสั่งเทสต์) / ส่งมอบ (ไฟล์ที่แก้, คำสั่งที่รัน, ผลจริง, ไม่ commit) — รายละเอียดใน `references/task-sheet.md`
 - ชี้ไฟล์ด้วย path (ใน interactive ใช้ `@path`) แทนแปะโค้ด
-- **ระบุคำสั่ง shell ที่อนุญาตในใบงานให้ตรงกับ `--allow`** และสั่งให้ "เขียนไฟล์ด้วยเครื่องมือแก้ไฟล์ ไม่ใช้ shell" — ไม่งั้น agy มักพยายาม `cat > file` แล้วโดนปฏิเสธ จบรอบแบบว่างเปล่า
+- สั่งให้ "เขียนไฟล์ด้วยเครื่องมือแก้ไฟล์ ไม่ใช้ shell" และบอกคำสั่งตรวจ (typecheck/test) ให้ครบ — โหมดปกติรันคำสั่งใดก็ได้ภายใน sandbox จึง**ไม่ต้องไล่ `--allow` ทีละโปรแกรม** แต่ไม่มีเครือข่าย: ใบงานต้องไม่พึ่ง `npm install`, `curl`, `git fetch/push` (หัวหน้าทำส่วนนั้นเองก่อนหรือหลัง)
+- ถ้าใช้ `--strict` หรือ `--no-sandbox`: ระบุโปรแกรมที่อนุญาตในใบงานให้ตรงกับ `--allow` **รวมทุกโปรแกรมหลัง `|` `&&` `;`** (เช่น `tail`, `head`, `wc`) เพราะคำสั่งที่ถูกปฏิเสธครั้งเดียวจบทั้งรอบแบบว่างเปล่า
 - agy เรียกแต่ละครั้งมี overhead ~10–13k tokens (system prompt) → **รวมงานที่เกี่ยวกันเป็นรอบเดียว** ดีกว่าเรียกถี่ ๆ แต่ยังคง 1 ผลลัพธ์/ชุดไฟล์ต่อรอบ
 
 ## 4. รัน
@@ -60,13 +61,23 @@ bash <skill-dir>/scripts/agy-run.sh run \
   --dir /path/to/repo \
   --model gemini-4-neon-medium \
   --mode accept-edits \                # plan = อ่าน/วางแผนอย่างเดียว
-  --allow node --allow npm --allow git \  # คำสั่ง shell ที่อนุญาต (prefix ตามชื่อโปรแกรม)
+  --add-dir /path/outside/repo \       # โฟลเดอร์นอก repo ที่ต้องอ่าน/เขียน (ใบงาน, node_modules ที่ symlink ไป, .git หลักของ worktree)
   --timeout 600 \
   --task-file tasks/03-feature.md       # หรือ --prompt "..."
 ```
 
-สคริปต์จัดการให้: `-p` อยู่ท้ายสุดพร้อม prompt (agy ต้องการ `-p "<prompt>"` — แบบ `agy -p --model X "..."` จะ error), `--output-format json`, `--print-timeout`, `--sandbox`, `< /dev/null`, สิทธิ์ผ่าน `--settings` เฉพาะ session (ไม่แตะ settings.json ของผู้ใช้), log JSON ใน `.agy-runs/` (ซ่อนจาก git status ผ่าน `.git/info/exclude`) แล้วพิมพ์ status, tokens, denied_actions, คำตอบ และ `git status/diff --stat`
-- `denied_actions` ไม่ว่าง = agy ต้องการคำสั่งที่ไม่ได้อนุญาต → เพิ่ม `--allow` ที่จำเป็นจริง ๆ แล้วรันใหม่ อย่ากระโดดไปใช้ `--dangerously-skip-permissions` (สคริปต์ไม่เปิดให้ใช้โดยตั้งใจ)
+**สิทธิ์รันคำสั่ง 3 แบบ (ตรวจแล้วกับ agy 1.5.14):**
+
+| แบบ | คำสั่ง shell | ใช้เมื่อ |
+|---|---|---|
+| ปกติ (ไม่ใส่ flag) | รันได้ทุกคำสั่ง **ภายใน sandbox**: ไม่มีเครือข่าย, เขียนนอก `--dir`/`--add-dir` ไม่ได้, อ่าน `~/.ssh` ไม่ได้ | งานแก้โค้ดที่ต้องวน typecheck/test เอง — ใช้แบบนี้เป็นหลัก |
+| `--strict` | เฉพาะโปรแกรมใน `--allow` (ยังอยู่ใน sandbox) | งานอ่านอย่างเดียวที่อยากจำกัดให้แคบสุด |
+| `--no-sandbox` | เฉพาะโปรแกรมใน `--allow` ไม่มี sandbox | ขั้นที่ต้องใช้เครือข่ายจริง ๆ — ปกติให้หัวหน้าทำเองดีกว่า |
+
+ใน sandbox สคริปต์ตั้ง `DEVELOPER_DIR` และ `GIT_CONFIG_GLOBAL=/dev/null` ให้ ไม่งั้น `git` ทุกคำสั่งตายบน macOS (อ่าน xcode-select link และ config ที่ include จาก `~/.gitconfig` ไม่ได้) ผลข้างเคียงที่ตั้งใจ: agy ไม่มี identity จึง commit ไม่ได้ — commit เป็นหน้าที่หัวหน้า
+
+สคริปต์จัดการให้: `-p` อยู่ท้ายสุดพร้อม prompt (agy ต้องการ `-p "<prompt>"` — แบบ `agy -p --model X "..."` จะ error), `--output-format stream-json`, `--print-timeout`, `--sandbox`, `< /dev/null`, สิทธิ์ผ่าน `--settings` เฉพาะ session (ไม่แตะ settings.json ของผู้ใช้), log NDJSON ใน `.agy-runs/` (ซ่อนจาก git status ผ่าน `.git/info/exclude`) แล้วพิมพ์ status, tokens, denied_actions, คำตอบ และ `git status/diff --stat`
+- `denied_actions` ไม่ว่าง = มีคำสั่งถูกปฏิเสธและ**รอบนั้นจบทันที งานไม่ครบ** สคริปต์พิมพ์บรรทัดคำสั่งที่ถูกปฏิเสธให้ → โหมดปกติ: คำสั่งนั้นต้องออกนอก sandbox ให้เพิ่ม `--add-dir` หรือทำขั้นนั้นเอง · `--strict`/`--no-sandbox`: เพิ่ม `--allow` ให้ครบทุกโปรแกรมในคำสั่ง อย่ากระโดดไปใช้ `--dangerously-skip-permissions` (สคริปต์ไม่เปิดให้ใช้โดยตั้งใจ)
 - งานยาว: รันแบบ background แล้วรอแจ้งเตือน · งานที่แตะไฟล์ต่างกันรันขนานได้ ไฟล์เดียวกันต้องรันต่อกัน
 
 ## 5. ตรวจงาน — Claude ตัดสิน
@@ -88,11 +99,14 @@ git diff main...HEAD | agy --model gemini-4-neon-medium --mode plan --print-time
 - ข้อมูลอ้างอิงจริง (พ.ย. 2026, แก้บั๊ก 2 ไฟล์ + เทสต์ งานเดียวกัน): agy Hydrogen-medium ≈29k tokens/36s vs Codex Sol-low ≈12k/24s — งานเล็กมากที่ Codex ว่างอยู่อาจคุ้มกว่า; agy เหมาะกับงานที่ต้องใช้โมเดลเฉพาะ (Orchestrator, Argon, Claude 5.5) หรือเมื่อโควตา Codex ตึง
 - interactive: `/btw` ถามแทรกไม่บวม context, `/compact` จบเฟส, `/clear` งานใหม่, `/context` ดูขนาด
 
-## 7. กับดักที่เจอจริง (agy 1.5.13)
+## 7. กับดักที่เจอจริง (agy 1.5.13–1.5.14)
 
 | อาการ | สาเหตุ | ทางแก้ |
 |---|---|---|
 | `-p took "--model" as its prompt` | `-p` รับค่าเป็น prompt ทันที | ใส่ `-p "<prompt>"` ท้ายสุด (สคริปต์ทำให้) |
-| `response` ว่าง + `denied_actions:[{"action":"command"}]` | headless ถามสิทธิ์ไม่ได้ → ปฏิเสธอัตโนมัติ | `--allow <program>` ให้คำสั่งที่จำเป็น + สั่งให้เขียนไฟล์ด้วย file tool |
+| `response` ว่าง + `denied_actions:[{"action":"command"}]` | headless ถามสิทธิ์ไม่ได้ → ปฏิเสธอัตโนมัติและจบรอบ มักเกิดจาก `npx … \| tail` ที่ `tail` ไม่อยู่ใน allow | ใช้โหมดปกติ (sandbox) แทน `--strict`; ดูบรรทัด "refused command(s)" ที่สคริปต์พิมพ์ |
+| `git` ทุกคำสั่ง error `xcode-select … Operation not permitted` | sandbox กันการอ่าน xcode-select link และ config ที่ include | สคริปต์ตั้ง `DEVELOPER_DIR` + `GIT_CONFIG_GLOBAL` ให้แล้ว (ถ้าเรียก agy เองต้องตั้งเอง) |
+| `--mode plan` ตอบว่า "สร้าง implementation_plan.md แล้ว" แทนคำตอบ | plan mode เขียนแผนลงโฟลเดอร์ของ agy | ใน prompt สั่งให้ "ตอบในข้อความ ไม่ต้องเขียนแผน" หรือใช้ `accept-edits` กับใบงานที่ระบุว่าห้ามแก้ไฟล์ |
+| เทสต์เขียน cache ไม่ได้ / `git` เขียน index ไม่ได้ใน worktree | `node_modules` เป็น symlink ออกนอก repo หรือ `.git` จริงอยู่ที่ repo หลัก | เพิ่ม `--add-dir` ของโฟลเดอร์ปลายทาง |
 | ค้างนาน | ไม่มี timeout | `--print-timeout` (สคริปต์ตั้งให้) |
 | เขียนไฟล์ไม่ได้บน macOS | ~/Downloads, ~/Desktop, ~/Documents ถูก OS ปกป้อง | ทำงานใน ~/Projects หรือให้ผู้ใช้เปิดสิทธิ์เอง |
