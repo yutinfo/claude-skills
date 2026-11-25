@@ -23,7 +23,7 @@ list_models() {  # prints "slug<TAB>visibility" from the local models cache, if 
   command -v python3 >/dev/null 2>&1 || return 1
   python3 - "$cache" <<'PY'
 import json, sys
-d = json.load(open(sys.argv[1]))
+d = json.load(open(sys.argv[1], encoding="utf-8"))
 m = d.get("models", d) if isinstance(d, dict) else d
 for x in (m if isinstance(m, list) else []):
     s = x.get("slug") or x.get("id")
